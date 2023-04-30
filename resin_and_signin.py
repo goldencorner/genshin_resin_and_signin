@@ -184,7 +184,7 @@ while True:
             current_resin = monitor_resin()
             if current_resin >= 159:
                 try:
-                    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHGd7sNje9MwcreSHWcA.send"
+                    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHXd7sNje9MwcreSHWcA.send"
                     params = {
                         "title": f"current_resin:{current_resin}"
                     }
