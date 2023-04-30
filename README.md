@@ -1,0 +1,2 @@
+# genshin_resin_and_signin_tool
+米游社自动签到和原神树脂提醒
