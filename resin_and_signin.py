@@ -3,6 +3,7 @@ import subprocess
 
 # adb connect 192.168.137.16:40803
 import datetime
+import traceback
 
 import cv2
 import time
@@ -14,8 +15,10 @@ import requests
 import tkinter as tk
 from tkinter import messagebox
 
-
 # 定义截图函数
+from matplotlib import pyplot as plt
+
+
 def get_screenshot():
     os.system("adb shell screencap -p /sdcard/screen.png")
     os.system("adb pull /sdcard/screen.png .")
@@ -51,6 +54,7 @@ def match_and_click(template_path):
     # ax.imshow(screenshot)
     # ax.plot(match_loc[0], match_loc[1], 'ro')
     # plt.show()
+    # plt.close()
     print(f"confidence:{confidence}")
     if confidence > 0.9:
         # 点击模板中心位置
@@ -74,20 +78,21 @@ def turn2resin_page():
 
 
 def monitor_resin():
+    # 加载模板
+    template = cv2.imread("./templates/resin_position.png", cv2.IMREAD_GRAYSCALE)
     # 截图
-    screenshot = subprocess.check_output(['adb', 'shell', 'screencap', '-p']).replace(b'\r\n', b'\n')
-    with open('screen.png', 'wb') as f:
-        f.write(screenshot)
-
-
-    #获取右边界
-    img = cv2.imread('screen.png')
-    template = cv2.imread("templates/resin_position.png")
-    result = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
+    get_screenshot()
+    # 加载截图
+    screenshot = cv2.imread("screen.png")
+    # 转为灰度图像
+    gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+    # 模板匹配
+    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+    # 找到匹配位置
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
     top_left = max_loc
-
-
+    confidence=max_val
+    print(f"confidence:{confidence}")
     # 打开图像文件
     img = Image.open("screen.png")
     # 指定需要识别文本的区域坐标
@@ -101,9 +106,16 @@ def monitor_resin():
 
     # 将灰度图像转换为文本
     text = pytesseract.image_to_string(gray_img, lang='eng')
-    current_resin = text
-    print(current_resin)
-    return int(current_resin)
+    current_resin = int(text)
+    time_till_full = (160-current_resin) * 8
+    t = datetime.datetime.now()
+    delta = datetime.timedelta(minutes=time_till_full)
+
+    t_full = t + delta
+    print(current_resin,", ",t_full, "完全恢复")
+    print()
+
+    return current_resin
 
 
 def sign_in():
@@ -119,7 +131,7 @@ def sign_in():
     return result
 
 
-def pop_up_windows():
+def pop_up_windows(str):
     # 创建一个Tk对象
     root = tk.Tk()
     root.withdraw()
@@ -141,7 +153,7 @@ def pop_up_windows():
     top.geometry('{}x{}+{}+{}'.format(top_width, top_height, x, y))
 
     # 在Toplevel窗口中显示一段字符串
-    label = tk.Label(top, text="请求错误")
+    label = tk.Label(top, text=str)
     label.pack()
 
     # 设置Toplevel窗口关闭时，同时关闭root窗口
@@ -154,6 +166,18 @@ def pop_up_windows():
     root.mainloop()
 
 
+def send_wechat(text):
+    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHxd7sNje9MwcreSHWcA.send"
+    params = {
+        "title": text
+    }
+    response = requests.post(url, data=params, proxies=None, timeout=10)
+    print(response.text)
+
+
+fault_num = 0
+reset_threshold = 8 * 60
+time_tolerance = 5 * 60 * 60
 os.system("adb devices")
 # 调用adb shell命令将亮度设置为0
 subprocess.run(["adb", "shell", "settings", "put", "system", "screen_brightness", "0"])
@@ -177,28 +201,28 @@ while True:
                 pickle.dump(last_sign_in_day, f)
 
     turn2resin_page()
-    reset_threshold = 8 * 60
     start_time = time.time()
     while time.time() - start_time <= reset_threshold:
-        try :
+        try:
             current_resin = monitor_resin()
             if current_resin >= 159:
                 try:
-                    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHXd7sNje9MwcreSHWcA.send"
-                    params = {
-                        "title": f"current_resin:{current_resin}"
-                    }
-                    response = requests.post(url, data=params, proxies=None, timeout=10)
-                    print(response.text)
+                    send_wechat(f"current_resin:{current_resin}")
                 except:
-                    pop_up_windows()
+                    pop_up_windows("请求错误")
                 # 进入死循环，每10分钟查看一次，直到体力被消耗
                 while monitor_resin() >= current_resin:
                     turn2resin_page()
-                    time.sleep(10*60)
-        except:
+                    time.sleep(reset_threshold)
+                fault_num = 0
+        except Exception as e:
+            traceback.print_exc()
+            if fault_num*reset_threshold > time_tolerance:
+                try:
+                    send_wechat("出现异常界面")
+                except:
+                    pop_up_windows("出现异常界面")
             match_and_click("./templates/i_get_it.png")
+            fault_num += 1
 
-
-
-        time.sleep(60)
+        time.sleep(reset_threshold)
