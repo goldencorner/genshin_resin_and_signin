@@ -167,7 +167,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHxd7sNje9MwcreSHWcA.send"
+    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHXd7sNje9MwcreSHWcA.send"
     params = {
         "title": text
     }
@@ -196,6 +196,10 @@ while True:
         result = sign_in()
         if result:
             last_sign_in_day = now.day
+            try:
+                send_wechat("签到成功")
+            except:
+                pop_up_windows("签到成功")
             # 保存签到日期到磁盘上
             with open("last_sign_in_day.pkl", "wb") as f:
                 pickle.dump(last_sign_in_day, f)
