@@ -1,5 +1,7 @@
 # genshin_resin_and_signin_tool
 米游社自动签到和原神树脂提醒。所有功能通过脚本实现，无需cookie，很少出现验证码，目前真正实用的签到工具
+![demo_resin]([https://example.com/images/beautiful-scenery.jpg](https://github.com/goldencorner/dataset/blob/main/_images/demo_resin.png))
+
 ## 功能
 - 每天一次在原神米游社签到
 - 树脂快满时发送提醒到你的微信
