@@ -167,7 +167,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHXd7sNje9MwcreSHWcA.send"
+    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHGd7sNje9MwcreSHWcA.send"
     params = {
         "title": text
     }
@@ -176,7 +176,7 @@ def send_wechat(text):
 
 
 fault_num = 0
-reset_threshold = 8 * 60
+reset_threshold = 4 * 60
 time_tolerance = 5 * 60 * 60
 os.system("adb devices")
 # 调用adb shell命令将亮度设置为0
@@ -218,15 +218,16 @@ while True:
                 while monitor_resin() >= current_resin:
                     turn2resin_page()
                     time.sleep(reset_threshold)
-                fault_num = 0
+            fault_num = 0
         except Exception as e:
             traceback.print_exc()
-            if fault_num*reset_threshold > time_tolerance:
-                try:
-                    send_wechat("出现异常界面")
-                except:
-                    pop_up_windows("出现异常界面")
             match_and_click("./templates/i_get_it.png")
             fault_num += 1
 
         time.sleep(reset_threshold)
+
+    if fault_num * reset_threshold > time_tolerance:
+        try:
+            send_wechat("出现异常界面")
+        except:
+            pop_up_windows("出现异常界面")
