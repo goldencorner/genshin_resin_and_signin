@@ -167,7 +167,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T7uk4aHGd7sNje9MwcreSHWcA.send"
+    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mRXX3sRbShJ4.send"
     params = {
         "title": text
     }
@@ -221,8 +221,12 @@ while True:
             fault_num = 0
         except Exception as e:
             traceback.print_exc()
+            print("try confirming teenager mode")
             match_and_click("./templates/i_get_it.png")
+            print("try skipping update")
+            match_and_click("./templates/skip_update.png")
             fault_num += 1
+
 
         time.sleep(reset_threshold)
 
