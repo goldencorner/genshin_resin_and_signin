@@ -20,3 +20,6 @@ List of devices attached
                     url = "https://sctapi.ftqq.com/SCT205640T7uk4aHXd7sNje9MwcreSHWcA.send"
 ```
 4. 运行
+## Tips
+- 目前米游社app可以在两个手机上登录同一个账号而互不影响
+- 此脚本可以持续运行
