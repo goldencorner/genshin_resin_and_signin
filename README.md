@@ -17,7 +17,7 @@ List of devices attached
 2. 根据自己的手机截图替换templates文件夹中的图片
 3. 从server酱（https://sct.ftqq.com/after ）获取SendKey并替换.py文件中的相应代码
 ```python
-                    url = "https://sctapi.ftqq.com/[SendKey].send"
+                    url = "https://sctapi.ftqq.com/{SendKey}.send"
 ```
 4. 运行
 ## Tips
