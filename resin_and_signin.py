@@ -167,7 +167,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mRXX3sRbShJ4.send"
+    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"
     params = {
         "title": text
     }
@@ -235,3 +235,4 @@ while True:
             send_wechat("出现异常界面")
         except:
             pop_up_windows("出现异常界面")
+        fault_num = 0
