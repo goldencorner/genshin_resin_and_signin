@@ -4,12 +4,13 @@ import subprocess
 # adb connect 192.168.137.16:40803
 import datetime
 import traceback
+from copy import deepcopy
 
 import cv2
 import time
 import os
 import subprocess
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytesseract
 import requests
 import tkinter as tk
@@ -74,7 +75,7 @@ def turn2resin_page():
     time.sleep(2)
     match_and_click("./templates/myself.png")
     match_and_click("./templates/my_roles.png")
-    time.sleep(8)
+    time.sleep(10)
 
 
 def monitor_resin():
@@ -97,6 +98,16 @@ def monitor_resin():
     img = Image.open("screen.png")
     # 指定需要识别文本的区域坐标
     box = (106, 1824, top_left[0], 1916)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
+    box = (0, top_left[1]-30, top_left[0], top_left[1]+70)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
+    # box = (0, top_left[0]-80, top_left[0], top_left[0]-40+50)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
+    '''debug'''
+    # # 创建一个可用于绘图的对象
+    # img_debug=deepcopy(img)
+    # draw = ImageDraw.Draw(img_debug)
+    # # 绘制矩形框
+    # draw.rectangle(box, outline="red")
+    # # 显示图像
+    # img_debug.show()
 
     # 裁剪指定区域
     crop_img = img.crop(box)
@@ -106,6 +117,7 @@ def monitor_resin():
 
     # 将灰度图像转换为文本
     text = pytesseract.image_to_string(gray_img, lang='eng')
+    print("识别结果为:",text)
     current_resin = int(text)
     time_till_full = (160-current_resin) * 8
     t = datetime.datetime.now()
