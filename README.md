@@ -10,8 +10,8 @@
 1. usb连接一台安装米游社的手机，并确认adb可用
 ```c
 >>>adb devices
-List of devices attached
-4b439028        device
+List of devices  attached
+4b439028         device
 ```
 
 2. 根据自己的手机截图替换templates文件夹中的图片
