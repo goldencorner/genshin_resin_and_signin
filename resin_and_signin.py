@@ -1,23 +1,202 @@
 import pickle
 import subprocess
-#
-# adb connect 192.168.137.16:40803
+
+from paddleocr import PaddleOCR, draw_ocr
 import datetime
 import traceback
 from copy import deepcopy
+import re
 
 import cv2
 import time
 import os
-import subprocess
+
+import numpy as np
 from PIL import Image, ImageDraw
-import pytesseract
+
 import requests
 import tkinter as tk
 from tkinter import messagebox
 
 # 定义截图函数
+from jmetal.algorithm.multiobjective import NSGAII
+from jmetal.core.problem import FloatProblem
+from jmetal.core.solution import FloatSolution
+from jmetal.operator import PolynomialMutation, SBXCrossover
+from jmetal.util.comparator import DominanceComparator
+from jmetal.util.termination_criterion import StoppingByTime
 from matplotlib import pyplot as plt
+from tqdm import tqdm
+
+std_confidence = 0.9
+
+
+def m_sleep(seconds):
+    """获取电量"""
+    # 使用 ADB 命令获取电池电量
+    adb_command = "adb shell dumpsys battery | findstr \"level\""
+    battery_info = os.popen(adb_command).read()
+
+    # 提取电量百分比
+    battery_level = None
+    for line in battery_info.splitlines():
+        if "level" in line:
+            parts = line.strip().split(":")
+            if len(parts) == 2:
+                battery_level = int(parts[1].strip())
+                break
+
+    if battery_level is not None:
+        print("电池电量：{}%".format(battery_level))
+    else:
+        print("无法获取电池电量信息")
+
+    if battery_level > 30:
+        # 加大CPU负载
+        print(f"stress CPU {seconds}s")
+        os.system(f"adb shell \"(while true; do :; done) & sleep {seconds} && kill $!\"")
+    else:
+        print(f"sleep {seconds}s")
+        time.sleep(seconds)
+
+
+def get_resolution():
+    # 运行ADB命令以获取屏幕分辨率
+    adb_command = "adb shell wm size"
+    result = subprocess.check_output(adb_command, shell=True)
+
+    # 解析输出以获取分辨率
+    output_str = result.decode('utf-8')
+    lines = output_str.strip().split("\n")
+    resolution = None
+
+    for line in lines:
+        if "Physical size:" in line:
+            resolution = line.split(":")[1].strip()
+    if resolution:
+        print(f"设备分辨率: {resolution}")
+    else:
+        raise "未能获取设备分辨率"
+    return resolution
+
+
+class ImageResizer:
+    def __init__(self, scale0, scale1, direction):
+        self.scale0 = scale0
+        self.scale1 = scale1
+        self.direction = direction
+
+    def resize(self, *args):
+        scale0 = self.scale0
+        scale1 = self.scale1
+        if self.direction == 0:
+            shape = args[0].shape
+            resized_img = cv2.resize(args[0], (int(shape[1] * scale1), int(shape[0] * scale0)))
+            return resized_img, args[1]
+        elif self.direction == 1:
+            shape = args[1].shape
+            resized_img = cv2.resize(args[1], (int(shape[1] * scale1), int(shape[0] * scale0)))
+            return args[0], resized_img
+
+    def restore_coordinates(self, coord):
+        if self.direction == 1:
+            return [coord[0] / self.scale1, coord[1] / self.scale0]
+        else:
+            return coord
+
+
+class ResolutionScaleProblem(FloatProblem):
+    """Class representing problem Srinivas."""
+
+    def __init__(self, template, screenshot, direction):
+        """
+        :param direction:
+            0: 缩小template
+            1：缩小screenshot
+        """
+        super().__init__()
+        self.number_of_variables = 2
+        self.number_of_objectives = 1
+        self.number_of_constraints = 0
+
+        self.obj_directions = [self.MINIMIZE]
+        self.obj_labels = ["similarity"]
+
+        self.lower_bound = [0.1, 0.1]
+        self.upper_bound = [1, 1]
+
+        self.template = template
+        self.screenshot = screenshot
+        self.direction = direction
+
+    def evaluate(self, solution: FloatSolution) -> FloatSolution:
+        template = self.template
+        screenshot = self.screenshot
+
+        scale0 = solution.variables[0]
+        scale1 = solution.variables[1]
+
+        template_ = deepcopy(template)
+        screenshot_ = deepcopy(screenshot)
+        image_resizer = ImageResizer(scale0, scale1, self.direction)
+        resized_tuple = image_resizer.resize(template_, screenshot_)
+        # 模板匹配
+        result = cv2.matchTemplate(resized_tuple[0], resized_tuple[1], cv2.TM_CCOEFF_NORMED)
+
+        # 找到匹配位置
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        solution.objectives[0] = -max_val
+
+        return solution
+
+    def get_name(self):
+        return "solve_resolution_scale"
+
+
+def solve_resolution_scale(template, screenshot, direction, max_seconds):
+    problem = ResolutionScaleProblem(template, screenshot, direction)
+    algorithm = NSGAII(
+        problem=problem,
+        population_size=20,
+        offspring_population_size=20,
+        mutation=PolynomialMutation(probability=1.0 / problem.number_of_variables, distribution_index=20.0),
+        crossover=SBXCrossover(probability=0.9, distribution_index=20.0),
+        termination_criterion=StoppingByTime(max_seconds=max_seconds),
+        dominance_comparator=DominanceComparator(),
+    )
+
+    print(f"正在适配分辨率，持续{max_seconds}s")
+
+    algorithm.start_computing_time = time.time()
+    algorithm.solutions = algorithm.create_initial_solutions()
+    algorithm.solutions = algorithm.evaluate(algorithm.solutions)
+    algorithm.init_progress()
+
+    with tqdm(total=max_seconds, desc="Time Progress") as pbar:
+        start_time = time.time()
+        while not algorithm.stopping_condition_is_met():
+            elapsed_time = time.time() - start_time
+            pbar.update(int(elapsed_time - pbar.n))  # 更新进度条
+            algorithm.step()
+            front = algorithm.get_result()
+            best_objective_val = np.inf
+            best_solution = front[0]
+            for solution in front:
+                if solution.objectives[0] < best_objective_val:
+                    best_solution = solution
+                    best_objective_val = -solution.objectives[0]
+            algorithm.update_progress()
+            pbar.set_description(f"best confidence {best_objective_val:.2f}")
+            if best_objective_val > 0.95:
+                break
+
+    algorithm.total_computing_time = time.time() - algorithm.start_computing_time
+    print("Algorithm (continuous problem): " + algorithm.get_name())
+    print("Problem: " + problem.get_name())
+    print("Computing time: " + str(algorithm.total_computing_time))
+    # print("optimization result: cycle=", cycle, "best_objective_val=", best_objective_val)
+
+    return ImageResizer(best_solution.variables[0], best_solution.variables[1], direction), best_objective_val
 
 
 def get_screenshot():
@@ -26,41 +205,124 @@ def get_screenshot():
 
 
 # 定义模板匹配函数
-def match_template(template, image):
-    # 转为灰度图像
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # 模板匹配
-    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-    # 找到匹配位置
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-    top_left = max_loc
-    h, w = template.shape
-    bottom_right = (top_left[0] + w, top_left[1] + h)
-    center = (int((top_left[0] + bottom_right[0]) / 2), int((top_left[1] + bottom_right[1]) / 2))
-    return center, max_val
-
-
 def match_and_click(template_path):
+    global std_confidence
     # 加载模板
     template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
     # 截图
     get_screenshot()
     # 加载截图
     screenshot = cv2.imread("screen.png")
-    # 匹配模板
-    match_loc, confidence = match_template(template, screenshot)
+    # 转为灰度图像
+    gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+    resolution = get_resolution()
 
-    # 创建一个图形窗口并显示截图
+    def calibration():
+        # 尺度校准
+        for desctiption, direction in {"缩小截图": 1, "缩小模板": 0}.items():
+            # if direction ==0:continue
+            print("尝试", desctiption)
+            image_resizer, confidence = solve_resolution_scale(template, gray, direction, 60)
+            std_confidence = confidence - 0.05  # 增加0.05的容错率
+            std_resolution = get_resolution()
+            if confidence > 0.95:
+                break
+        if confidence < 0.95:
+            raise "分辨率适配失败，重试有概率解决问题"
+        if not os.path.exists("scale_info.pkl"):
+            with open("scale_info.pkl", "wb") as f:
+                scale_dict = {"default": [std_resolution, image_resizer, std_confidence]}
+                pickle.dump(scale_dict, f)
+        else:
+            with open("scale_info.pkl", "rb") as f:
+                scale_dict = pickle.load(f)
+            for desctiption, direction in {"缩小截图": 1, "缩小模板": 0}.items():
+                print("尝试", desctiption)
+                image_resizer, confidence = solve_resolution_scale(template, gray, direction, 60)
+                std_confidence = confidence - 0.05  # 增加0.05的容错率
+                std_resolution = get_resolution()
+                if confidence > 0.95:
+                    break
+            if confidence < 0.95:
+                raise "分辨率适配失败，重试有概率解决问题"
+            print(f"为模板{template_path}添加专用分辨率参数")
+            scale_dict[template_path] = [std_resolution, image_resizer, std_confidence]
+            with open("scale_info.pkl", "wb") as f:
+                pickle.dump(scale_dict, f)
+        return image_resizer, std_confidence
+
+    '''第一次机会'''
+    if os.path.exists("scale_info.pkl"):
+        with open("scale_info.pkl", "rb") as f:
+            scale_dict = pickle.load(f)
+            if template_path in scale_dict.keys():
+                [std_resolution, image_resizer, std_confidence] = scale_dict[template_path]
+            else:
+                [std_resolution, image_resizer, std_confidence] = scale_dict["default"]
+        if std_resolution != resolution:
+            image_resizer, std_confidence = calibration()
+    else:
+        image_resizer, std_confidence = calibration()
+    resized_tuple = image_resizer.resize(template, gray)
+    # 模板匹配
+    result = cv2.matchTemplate(resized_tuple[0], resized_tuple[1], cv2.TM_CCOEFF_NORMED)
+    # 找到匹配位置
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+    confidence = max_val
+    print("CONFIDENCE1", confidence)
+    top_left = list(max_loc)
+
+    '''第二次机会'''
+    if max_val < std_confidence:
+        print("默认参数失效，尝试更新参数")
+        calibration()
+        if os.path.exists("scale_info.pkl"):
+            with open("scale_info.pkl", "rb") as f:
+                scale_dict = pickle.load(f)
+                if template_path in scale_dict.keys():
+                    [std_resolution, image_resizer, std_confidence] = scale_dict[template_path]
+                else:
+                    [std_resolution, image_resizer, std_confidence] = scale_dict["default"]
+            if std_resolution != resolution:
+                image_resizer, std_confidence = calibration()
+        else:
+            image_resizer, std_confidence = calibration()
+        resized_tuple = image_resizer.resize(template, gray)
+        # 模板匹配
+        result = cv2.matchTemplate(resized_tuple[0], resized_tuple[1], cv2.TM_CCOEFF_NORMED)
+        # 找到匹配位置
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        confidence = max_val
+        print("CONFIDENCE2", confidence)
+        top_left = list(max_loc)
+        if max_val < std_confidence:
+            raise "匹配失败，未知错误"
+
+    # debug
     # fig, ax = plt.subplots()
-    # ax.imshow(screenshot)
-    # ax.plot(match_loc[0], match_loc[1], 'ro')
+    # ax.imshow(gray)
+    # ax.scatter(top_left[0], top_left[1], s=100, c='red', marker='o')
+    # fig.savefig("test.jpg")
     # plt.show()
     # plt.close()
-    print(f"confidence:{confidence}")
-    if confidence > 0.9:
+    h, w = template.shape
+    bottom_right = (top_left[0] + w, top_left[1] + h)
+    center = [(top_left[0] + bottom_right[0]) / 2, (top_left[1] + bottom_right[1]) / 2]
+    center = image_resizer.restore_coordinates(center)
+
+    # debug 创建一个图形窗口并显示截图
+    # fig, ax = plt.subplots()
+    # ax.imshow(screenshot)
+    # ax.plot(center[0], center[1], 'ro')
+    # plt.savefig("test.jpg")
+    # plt.show()
+    # plt.close()
+
+    if confidence > std_confidence:
         # 点击模板中心位置
-        os.system("adb shell input tap {} {}".format(match_loc[0], match_loc[1]))
-        time.sleep(2)
+        os.system(
+            "adb shell input tap {} {}".format(center[0], center[1]))
+        m_sleep(2)
         return True
     else:
         print("NOT FOUND")
@@ -71,60 +333,58 @@ def turn2resin_page():
     # 启动应用程序
     package_name = 'com.mihoyo.hyperion'
     activity_name = '.main.HyperionMainActivity'
-    subprocess.call(['adb', 'shell', 'am', 'start', '-n', f'{package_name}/{package_name + activity_name}'])
-    time.sleep(2)
+    subprocess.call(['adb', 'shell', 'am', 'start', '-n',
+                     f'{package_name}/{package_name + activity_name}'])
+    m_sleep(2)
     match_and_click("./templates/myself.png")
     match_and_click("./templates/my_roles.png")
-    time.sleep(10)
+    m_sleep(20)
 
 
 def monitor_resin():
-    # 加载模板
-    template = cv2.imread("./templates/resin_position.png", cv2.IMREAD_GRAYSCALE)
+    """从截图上识别体力值"""
     # 截图
     get_screenshot()
-    # 加载截图
-    screenshot = cv2.imread("screen.png")
-    # 转为灰度图像
-    gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-    # 模板匹配
-    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-    # 找到匹配位置
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-    top_left = max_loc
-    confidence=max_val
-    print(f"confidence:{confidence}")
-    # 打开图像文件
-    img = Image.open("screen.png")
-    # 指定需要识别文本的区域坐标
-    box = (106, 1824, top_left[0], 1916)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
-    box = (0, top_left[1]-30, top_left[0], top_left[1]+70)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
-    # box = (0, top_left[0]-80, top_left[0], top_left[0]-40+50)  # (左上角 x, 左上角 y, 右下角 x, 右下角 y)
-    '''debug'''
-    # # 创建一个可用于绘图的对象
-    # img_debug=deepcopy(img)
-    # draw = ImageDraw.Draw(img_debug)
-    # # 绘制矩形框
-    # draw.rectangle(box, outline="red")
-    # # 显示图像
-    # img_debug.show()
+    '''离线百度文本识别'''
+    ocr = PaddleOCR(use_angle_cls=True, lang="ch")  # need to run only once to download and load model into memory
+    img_path = 'screen.png'
+    result = ocr.ocr(img_path, cls=True)
+    result = result[0]
 
-    # 裁剪指定区域
-    crop_img = img.crop(box)
+    # debug   显示结果
+    # image = Image.open(img_path).convert('RGB')
+    # boxes = [line[0] for line in result]
+    # txts = [line[1][0] for line in result]
+    # scores = [line[1][1] for line in result]
+    # im_show = draw_ocr(image, boxes, txts, scores, font_path='./fonts/simfang.ttf')
+    # im_show = Image.fromarray(im_show)
+    # im_show.save('result.jpg')
 
-    # 将图像转换为灰度图像
-    gray_img = crop_img.convert('L')
+    result = str(result)
+    result = result.replace(" ", "")
 
-    # 将灰度图像转换为文本
-    text = pytesseract.image_to_string(gray_img, lang='eng')
-    print("识别结果为:",text)
+    '''联网百度文本识别'''
+    # result = subprocess.check_output("paddleocr --image_dir screen.png", shell=True)
+    # result = result.decode('utf-8')
+
+    for pattern in [r'(\d+)/160', r'(\d+)／160']:
+        match = re.search(pattern, result)
+        if match:
+            # 获取匹配到的值
+            text = match.group(1)
+            print(f"The value is: {text}")
+            break
+        else:
+            print("Pattern not found in the string.")
+
+    print("识别结果为:", text)
     current_resin = int(text)
-    time_till_full = (160-current_resin) * 8
+    time_till_full = (160 - current_resin) * 8
     t = datetime.datetime.now()
     delta = datetime.timedelta(minutes=time_till_full)
 
     t_full = t + delta
-    print(current_resin,", ",t_full, "完全恢复")
+    print(current_resin, ", ", t_full, "完全恢复")
     print()
 
     return current_resin
@@ -135,10 +395,11 @@ def sign_in():
     # 启动应用程序
     package_name = 'com.mihoyo.hyperion'
     activity_name = '.main.HyperionMainActivity'
-    subprocess.call(['adb', 'shell', 'am', 'start', '-n', f'{package_name}/{package_name + activity_name}'])
-    time.sleep(2)
+    subprocess.call(['adb', 'shell', 'am', 'start', '-n',
+                     f'{package_name}/{package_name + activity_name}'])
+    m_sleep(2)
     match_and_click("./templates/sign_in.png")
-    time.sleep(8)
+    m_sleep(8)
     result = match_and_click("./templates/draw.png")
     return result
 
@@ -179,7 +440,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"
+    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"  # 替换为自己的SendKey
     params = {
         "title": text
     }
@@ -192,7 +453,8 @@ reset_threshold = 4 * 60
 time_tolerance = 5 * 60 * 60
 os.system("adb devices")
 # 调用adb shell命令将亮度设置为0
-subprocess.run(["adb", "shell", "settings", "put", "system", "screen_brightness", "0"])
+subprocess.run(["adb", "shell", "settings", "put", "system",
+                "screen_brightness", "50"])
 while True:
     # 检查今天是否已经签到
     # 加载上次签到的日期
@@ -229,7 +491,7 @@ while True:
                 # 进入死循环，每10分钟查看一次，直到体力被消耗
                 while monitor_resin() >= current_resin:
                     turn2resin_page()
-                    time.sleep(reset_threshold)
+                    m_sleep(reset_threshold)
             fault_num = 0
         except Exception as e:
             traceback.print_exc()
@@ -239,8 +501,7 @@ while True:
             match_and_click("./templates/skip_update.png")
             fault_num += 1
 
-
-        time.sleep(reset_threshold)
+        m_sleep(reset_threshold)
 
     if fault_num * reset_threshold > time_tolerance:
         try:
