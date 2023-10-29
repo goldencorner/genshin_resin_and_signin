@@ -14,7 +14,7 @@ pip install "paddleocr>=2.0.1" -i https://mirror.baidu.com/pypi/simple
 ```
 2.安装其他必要的库
 ```bash
-pip install paddleocr opencv-python pillow requests jmetalpy matplotlib tqdm -i https://mirror.baidu.com/pypi/simple
+pip install paddleocr opencv-python pillow requests jmetalpy==1.5.5 matplotlib tqdm -i https://mirror.baidu.com/pypi/simple
 ```
 ## 用法
 1. usb连接一台安装米游社的手机，并确认adb可用
