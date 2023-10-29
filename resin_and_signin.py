@@ -51,7 +51,7 @@ def m_sleep(seconds):
     else:
         print("无法获取电池电量信息")
 
-    if battery_level > 30:
+    if battery_level > 50:
         # 加大CPU负载
         print(f"stress CPU {seconds}s")
         os.system(f"adb shell \"(while true; do :; done) & sleep {seconds} && kill $!\"")
@@ -440,7 +440,7 @@ def pop_up_windows(str):
 
 
 def send_wechat(text):
-    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"  # 替换为自己的SendKey
+    url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"
     params = {
         "title": text
     }
@@ -494,11 +494,14 @@ while True:
                     m_sleep(reset_threshold)
             fault_num = 0
         except Exception as e:
-            traceback.print_exc()
-            print("try confirming teenager mode")
-            match_and_click("./templates/i_get_it.png")
-            print("try skipping update")
-            match_and_click("./templates/skip_update.png")
+            try:
+                traceback.print_exc()
+                print("try confirming teenager mode")
+                match_and_click("./templates/i_get_it.png")
+                print("try skipping update")
+                match_and_click("./templates/skip_update.png")
+            except:
+                pass
             fault_num += 1
 
         m_sleep(reset_threshold)
