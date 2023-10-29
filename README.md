@@ -27,7 +27,8 @@ List of devices  attached
 ```python
                     url = "https://sctapi.ftqq.com/{SendKey}.send"
 ```
-3. 运行resin_and_signin.py
+3. 首次启动脚本时会自动进行分辨率适配，这个过程中出现弹窗和异常界面将导致分辨率适配失败，因此启动前需要手动检查APP能否正常进入树脂界面和签到界面（保持未签到的状态，否则要第二天才能运行）
+4. 运行resin_and_signin.py
 ## Tips
 - 目前米游社app可以在两个手机上登录同一个账号而互不影响
 - 此脚本可以持续运行
