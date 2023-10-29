@@ -23,7 +23,7 @@ pip install paddleocr opencv-python pillow requests jmetalpy==1.5.5 matplotlib t
 List of devices  attached
 4b439028         device
 ```
-2. 从server酱（https://sct.ftqq.com/after ）获取SendKey并替换.py文件中的相应代码
+2. 从server酱（https://sct.ftqq.com/after ）获取SendKey并替换resin_and_signin.py文件中的相应代码
 ```python
 def send_wechat(text):
     url = "https://sctapi.ftqq.com/SCT205640T2og2nNrP2BE8mR0H3sRbShJ4.send"  # 替换为自己的SendKey
