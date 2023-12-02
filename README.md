@@ -1,6 +1,7 @@
 # genshin_resin_and_signin_tool
 米游社自动签到和原神树脂提醒。所有功能通过脚本实现，无需cookie，很少出现验证码，目前真正实用的签到工具  
-**2023年11月26日**最新版本米游社V2.63.1实测可用
+**2023年11月26日**最新版本米游社V2.63.1实测可用  
+demo演示视频传送门：(https://www.bilibili.com/video/BV1sw411h7UJ/)
 
 <img src="https://github.com/goldencorner/dataset/blob/main/_images/demo_resin.png" alt="demo_resin" width="388" height="400">
 
