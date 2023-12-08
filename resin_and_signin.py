@@ -209,7 +209,7 @@ def get_screenshot():
 
 
 # 定义模板匹配函数
-def match_and_click(template_path, save_coordinates=False):
+def match_and_click(template_path, save_coordinates=True):
     global std_confidence
     # 加载模板
     template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
@@ -329,7 +329,7 @@ def match_and_click(template_path, save_coordinates=False):
             ax.imshow(screenshot)
             ax.plot(center[0], center[1], 'ro')
             plt.savefig("test.jpg")
-            plt.show()
+            # plt.show()
             plt.close()
 
         # 点击模板中心位置
@@ -371,14 +371,15 @@ def turn2main_page():
             time.sleep(3)
             break
         if "米游社没有响应" in i[1][0]:
-            print("relaunch APP")
-            subprocess.call(['adb', 'shell', 'am', 'force-stop',
-                             f'{package_name}'])
-            time.sleep(8)
-            turn2main_page()
-            time.sleep(3)
+            relaunch_APP()
             break
         if "回顶部" in i[1][0]:
+            center = i[0][0]
+            os.system(
+                "adb shell input tap {} {}".format(center[0], center[1]))
+            time.sleep(3)
+            break
+        if "发现" in i[1][0]:
             center = i[0][0]
             os.system(
                 "adb shell input tap {} {}".format(center[0], center[1]))
@@ -401,6 +402,14 @@ def turn2resin_page():
             break
     time.sleep(20)
 
+
+def relaunch_APP():
+    print("relaunch APP")
+    subprocess.call(['adb', 'shell', 'am', 'force-stop',
+                     f'{package_name}'])
+    time.sleep(8)
+    turn2main_page()
+    time.sleep(3)
 
 def get_OCR_result(screenshot_path):
     ocr = PaddleOCR(use_angle_cls=True, lang="ch")  # need to run only once to download and load model into memory
@@ -462,8 +471,20 @@ def sign_in():
     turn2main_page()
     match_and_click("./templates/sign_in.png")
     time.sleep(8)
-    result = match_and_click("./templates/draw.png")
-    return result
+    match_and_click("./templates/draw.png")
+    time.sleep(5)
+    sign_result=False
+    # 处理主界面可能出现的弹窗
+    screenshot_path = get_screenshot()
+    result = get_OCR_result(screenshot_path)
+
+    for i in result:
+        if "签到成功" in i[1][0]:
+            sign_result=True
+            break
+
+
+    return sign_result
 
 
 def pop_up_windows(str):
@@ -521,7 +542,7 @@ subprocess.run(["adb", "shell", "settings", "put", "system",
 
 def balance_SOC_or_sleep(seconds):
     soc = get_soc()
-    if soc > 50:
+    if soc > 90:
         # 增加CPU负载
         print(f"stree cpu {seconds}s")
         t0 = time.time()
@@ -550,16 +571,19 @@ while True:
     now = datetime.datetime.now() + datetime.timedelta(hours=-3)  # 米游社在零点会跳出一个弹窗 三点钟再签到避免这种情况
     # 如果当前时间是今天，并且上次签到不是今天，则执行签到
     if now.day != last_sign_in_day:
-        result = sign_in()
-        if result:
-            last_sign_in_day = now.day
-            try:
-                send_wechat(f"签到成功; soc:{get_soc()}")
-            except:
-                pop_up_windows("签到成功")
-            # 保存签到日期到磁盘上
-            with open("last_sign_in_day.pkl", "wb") as f:
-                pickle.dump(last_sign_in_day, f)
+        try:
+            result = sign_in()
+            if result:
+                last_sign_in_day = now.day
+                try:
+                    send_wechat(f"签到成功; soc:{get_soc()}")
+                except:
+                    pop_up_windows("签到成功")
+                # 保存签到日期到磁盘上
+                with open("last_sign_in_day.pkl", "wb") as f:
+                    pickle.dump(last_sign_in_day, f)
+        except Exception as e:
+            traceback.print_exc()
 
     start_time = time.time()
     while time.time() - start_time <= reset_threshold:
@@ -579,8 +603,8 @@ while True:
             fault_num = 0
         except Exception as e:
             traceback.print_exc()
-
             fault_num += 1
+            relaunch_APP()
 
         balance_SOC_or_sleep(reset_threshold)
 
