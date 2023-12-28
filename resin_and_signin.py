@@ -361,7 +361,6 @@ def turn2main_page():
             except Exception as e:
                 warnings.warn("意料之外的识别错误: {}".format(str(e)))
             time.sleep(3)
-            break
         if "下次再说" in i[1][0]:
             try:
                 print("try skipping update")
@@ -369,22 +368,18 @@ def turn2main_page():
             except Exception as e:
                 warnings.warn("意料之外的识别错误: {}".format(str(e)))
             time.sleep(3)
-            break
         if "米游社没有响应" in i[1][0]:
             relaunch_APP()
-            break
         if "回顶部" in i[1][0]:
             center = i[0][0]
             os.system(
                 "adb shell input tap {} {}".format(center[0], center[1]))
             time.sleep(3)
-            break
         if "发现" in i[1][0]:
             center = i[0][0]
             os.system(
                 "adb shell input tap {} {}".format(center[0], center[1]))
             time.sleep(3)
-            break
 
 
 def turn2resin_page():
@@ -537,7 +532,7 @@ time_tolerance = 5 * 60 * 60
 os.system("adb devices")
 # 调用adb shell命令将亮度设置为0
 subprocess.run(["adb", "shell", "settings", "put", "system",
-                "screen_brightness", "10"])
+                "screen_brightness", "0"])
 
 
 def balance_SOC_or_sleep(seconds):
